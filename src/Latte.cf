@@ -1,0 +1,67 @@
+-- Programs ------------------------------------------------
+entrypoints Program ;
+Prog.      Program ::= [TopDef] ;
+FnDef.     TopDef  ::= Type Ident "(" [Arg] ")" Block ;
+Ar. 	   Arg ::= Type Ident;
+separator  Arg "," ;
+separator nonempty TopDef "" ;
+
+-- Statements ----------------------------------------------
+Empty.     Stmt ::= ";" ;
+Exp.       Stmt ::= Expr ";" ;
+Ass.       Stmt ::= Expr "=" Expr ";" ;
+Incr.      Stmt ::= Expr "++" ";" ;
+Decr.      Stmt ::= Expr "--" ";" ;
+Ret.       Stmt ::= "return" Expr ";" ;
+VRet.      Stmt ::= "return" ";" ;
+If.        Stmt ::= "if" "(" Expr ")" Stmt ;
+IfElse.    Stmt ::= "if" "(" Expr ")" Stmt "else" Stmt ;
+While.     Stmt ::= "while" "(" Expr ")" Stmt ;
+BStmt.     Stmt ::= Block ;
+Blck.      Block ::= "{" [Stmt] "}" ;
+Decl.      Stmt ::= Type [Item] ";" ;
+NoInit.    Item ::= Ident ;
+Init.      Item ::= Ident "=" Expr ;
+separator  Stmt "" ;
+separator nonempty Item "," ;
+
+-- Types ---------------------------------------------------
+Int.       Type ::= "int" ;
+Str.       Type ::= "string" ;
+Bool.      Type ::= "boolean" ;
+Void.      Type ::= "void" ;
+
+-- Expressions ---------------------------------------------
+EOr.       Expr ::= Expr1 "||" Expr ;
+EAnd.      Expr1 ::= Expr2 "&&" Expr1 ;
+ERel.      Expr2 ::= Expr2 RelOp Expr3 ;
+EAdd.      Expr3 ::= Expr3 AddOp Expr4 ;
+EMul.      Expr4 ::= Expr4 MulOp Expr5 ;
+Not.       Expr5 ::= "!" Expr6 ;
+Neg.       Expr5 ::= "-" Expr6 ;
+EVar.      Expr6 ::= Ident ;
+EInt.      Expr6 ::= Integer ;
+EString.   Expr6 ::= String ;
+ETrue.     Expr6 ::= "true" ;
+EFalse.    Expr6 ::= "false" ;
+EApp.      Expr6 ::= Ident "(" [Expr] ")" ;
+coercions  Expr 6 ;
+separator  Expr "," ;
+
+-- Operators -----------------------------------------------
+Plus.      AddOp ::= "+" ;
+Minus.     AddOp ::= "-" ;
+Times.     MulOp ::= "*" ;
+Div.       MulOp ::= "/" ;
+Mod.       MulOp ::= "%" ;
+LTH.       RelOp ::= "<" ;
+LE.        RelOp ::= "<=" ;
+GTH.       RelOp ::= ">" ;
+GE.        RelOp ::= ">=" ;
+EQU.       RelOp ::= "==" ;
+NE.        RelOp ::= "!=" ;
+
+-- Comments ------------------------------------------------
+comment    "#" ;
+comment    "//" ;
+comment    "/*" "*/" ;
