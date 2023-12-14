@@ -23,12 +23,11 @@ run s = case pProgram (myLexer s) of
 main :: IO ()
 main = do
     args <- getArgs
-    case args of
-        fs -> mapM_ (\file -> do
-            output <- readFile file >>= run
-            let outputFile = replaceExtension file ".s"
-            let objFile = replaceExtension file ".o"
-            let execFile = dropExtension file
-            T.writeFile outputFile (toLazyText output)
-            system $ "nasm -f elf64 " ++ outputFile
-            system $ "gcc -m64 -no-pie lib/runtime.o -o " ++ execFile ++ " " ++ objFile) fs
+    mapM_ (\file -> do
+        output <- readFile file >>= run
+        let outputFile = replaceExtension file ".s"
+        let objFile = replaceExtension file ".o"
+        let execFile = dropExtension file
+        T.writeFile outputFile (toLazyText output)
+        system $ "nasm -f elf64 " ++ outputFile
+        system $ "gcc -m64 -no-pie lib/runtime.o -o " ++ execFile ++ " " ++ objFile) args

@@ -23,3 +23,5 @@ takeType (Int _) = TInt
 takeType (Str _) = TStr
 takeType (Bool _) = TBool
 takeType (Void _) = TVoid
+takeType (Array _ t) = error "Todo"
+takeType (Class _ x) = error "Todo"

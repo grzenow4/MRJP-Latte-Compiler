@@ -1,9 +1,14 @@
 -- Programs ------------------------------------------------
 entrypoints Program ;
 Prog.      Program ::= [TopDef] ;
-FnDef.     TopDef  ::= Type Ident "(" [Arg] ")" Block ;
+FnDef.     TopDef ::= Type Ident "(" [Arg] ")" Block ;
+ClassDef.  TopDef ::= "class" Ident "{" [Field] "}" ;
+ClassExt.  TopDef ::= "class" Ident "extends" Ident "{" [Field] "}" ;
+AttrDef.   Field ::= Type Ident ";" ;
+MethodDef. Field ::= Type Ident "(" [Arg] ")" Block ;
 Ar. 	   Arg ::= Type Ident;
 separator  Arg "," ;
+separator  Field "" ;
 separator nonempty TopDef "" ;
 
 -- Statements ----------------------------------------------
@@ -17,6 +22,7 @@ VRet.      Stmt ::= "return" ";" ;
 If.        Stmt ::= "if" "(" Expr ")" Stmt ;
 IfElse.    Stmt ::= "if" "(" Expr ")" Stmt "else" Stmt ;
 While.     Stmt ::= "while" "(" Expr ")" Stmt ;
+For.       Stmt ::= "for" "(" Type Ident ":" Expr ")" Stmt ;
 BStmt.     Stmt ::= Block ;
 Blck.      Block ::= "{" [Stmt] "}" ;
 Decl.      Stmt ::= Type [Item] ";" ;
@@ -30,6 +36,8 @@ Int.       Type ::= "int" ;
 Str.       Type ::= "string" ;
 Bool.      Type ::= "boolean" ;
 Void.      Type ::= "void" ;
+Array.     Type ::= Type "[]" ;
+Class.     Type ::= Ident ;
 
 -- Expressions ---------------------------------------------
 EOr.       Expr ::= Expr1 "||" Expr ;
@@ -39,13 +47,19 @@ EAdd.      Expr3 ::= Expr3 AddOp Expr4 ;
 EMul.      Expr4 ::= Expr4 MulOp Expr5 ;
 Not.       Expr5 ::= "!" Expr6 ;
 Neg.       Expr5 ::= "-" Expr6 ;
-EVar.      Expr6 ::= Ident ;
-EInt.      Expr6 ::= Integer ;
-EString.   Expr6 ::= String ;
-ETrue.     Expr6 ::= "true" ;
-EFalse.    Expr6 ::= "false" ;
-EApp.      Expr6 ::= Ident "(" [Expr] ")" ;
-coercions  Expr 6 ;
+EClass.    Expr6 ::= "new" Ident ;
+EAttr.     Expr7 ::= Expr6 "." Ident ;
+EMethod.   Expr7 ::= Expr6 "." Ident "(" [Expr] ")" ;
+ENull.     Expr7 ::= "(" Ident ")" "null" ;
+EArr.      Expr7 ::= "new" Type "[" Expr "]" ;
+EElem.     Expr7 ::= Expr7 "[" Expr "]" ;
+EVar.      Expr7 ::= Ident ;
+EInt.      Expr7 ::= Integer ;
+EString.   Expr7 ::= String ;
+ETrue.     Expr7 ::= "true" ;
+EFalse.    Expr7 ::= "false" ;
+EApp.      Expr7 ::= Ident "(" [Expr] ")" ;
+coercions  Expr 7 ;
 separator  Expr "," ;
 
 -- Operators -----------------------------------------------

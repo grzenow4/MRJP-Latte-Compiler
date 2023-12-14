@@ -27,6 +27,8 @@ checkTopDef (FnDef pos t x args ss) = do
     if not (res || takeType t == TVoid)
     then throwError $ newErr pos ("Function " ++ (takeStr x) ++ " does not return")
     else put tcs
+checkTopDef (ClassDef pos x fields) = error "Todo"
+checkTopDef (ClassExt pos x y fields) = error "Todo"
 
 checkBlock :: Block -> TCM ()
 checkBlock (Blck _ ss) = do
@@ -94,6 +96,7 @@ checkStmt (While pos e s) = do
     case e of
         ETrue _ -> put tcs { returned = res }
         _ -> put tcs
+checkStmt (For pos t x e s) = error "Todo"
 checkStmt (BStmt _ ss) = checkBlock ss
 checkStmt (Decl _ t its) = mapM_ (\it -> do
     let x = itemStr it
@@ -137,6 +140,12 @@ checkExp (Not pos e) = do
 checkExp (Neg pos e) = do
     checkExp e >>= assertInt pos
     return TInt
+checkExp (EClass pos x) = error "Todo"
+checkExp (EAttr pos e x) = error "Todo"
+checkExp (EMethod pos e x es) = error "Todo"
+checkExp (ENull pos x) = error "Todo"
+checkExp (EArr pos t e) = error "Todo"
+checkExp (EElem pos e1 e2) = error "Todo"
 checkExp (EVar pos x) = getType pos (takeStr x)
 checkExp (EInt _ _) = return TInt
 checkExp (EString _ _) = return TStr

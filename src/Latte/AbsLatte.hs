@@ -23,7 +23,16 @@ data Program' a = Prog a [TopDef' a]
   deriving (C.Eq, C.Ord, C.Show, C.Read, C.Functor, C.Foldable, C.Traversable)
 
 type TopDef = TopDef' BNFC'Position
-data TopDef' a = FnDef a (Type' a) Ident [Arg' a] (Block' a)
+data TopDef' a
+    = FnDef a (Type' a) Ident [Arg' a] (Block' a)
+    | ClassDef a Ident [Field' a]
+    | ClassExt a Ident Ident [Field' a]
+  deriving (C.Eq, C.Ord, C.Show, C.Read, C.Functor, C.Foldable, C.Traversable)
+
+type Field = Field' BNFC'Position
+data Field' a
+    = AttrDef a (Type' a) Ident
+    | MethodDef a (Type' a) Ident [Arg' a] (Block' a)
   deriving (C.Eq, C.Ord, C.Show, C.Read, C.Functor, C.Foldable, C.Traversable)
 
 type Arg = Arg' BNFC'Position
@@ -42,6 +51,7 @@ data Stmt' a
     | If a (Expr' a) (Stmt' a)
     | IfElse a (Expr' a) (Stmt' a) (Stmt' a)
     | While a (Expr' a) (Stmt' a)
+    | For a (Type' a) Ident (Expr' a) (Stmt' a)
     | BStmt a (Block' a)
     | Decl a (Type' a) [Item' a]
   deriving (C.Eq, C.Ord, C.Show, C.Read, C.Functor, C.Foldable, C.Traversable)
@@ -55,7 +65,13 @@ data Item' a = NoInit a Ident | Init a Ident (Expr' a)
   deriving (C.Eq, C.Ord, C.Show, C.Read, C.Functor, C.Foldable, C.Traversable)
 
 type Type = Type' BNFC'Position
-data Type' a = Int a | Str a | Bool a | Void a
+data Type' a
+    = Int a
+    | Str a
+    | Bool a
+    | Void a
+    | Array a (Type' a)
+    | Class a Ident
   deriving (C.Eq, C.Ord, C.Show, C.Read, C.Functor, C.Foldable, C.Traversable)
 
 type Expr = Expr' BNFC'Position
@@ -67,6 +83,12 @@ data Expr' a
     | EMul a (Expr' a) (MulOp' a) (Expr' a)
     | Not a (Expr' a)
     | Neg a (Expr' a)
+    | EClass a Ident
+    | EAttr a (Expr' a) Ident
+    | EMethod a (Expr' a) Ident [Expr' a]
+    | ENull a Ident
+    | EArr a (Type' a) (Expr' a)
+    | EElem a (Expr' a) (Expr' a)
     | EVar a Ident
     | EInt a Integer
     | EString a String
@@ -112,6 +134,13 @@ instance HasPosition Program where
 instance HasPosition TopDef where
   hasPosition = \case
     FnDef p _ _ _ _ -> p
+    ClassDef p _ _ -> p
+    ClassExt p _ _ _ -> p
+
+instance HasPosition Field where
+  hasPosition = \case
+    AttrDef p _ _ -> p
+    MethodDef p _ _ _ _ -> p
 
 instance HasPosition Arg where
   hasPosition = \case
@@ -129,6 +158,7 @@ instance HasPosition Stmt where
     If p _ _ -> p
     IfElse p _ _ _ -> p
     While p _ _ -> p
+    For p _ _ _ _ -> p
     BStmt p _ -> p
     Decl p _ _ -> p
 
@@ -147,6 +177,8 @@ instance HasPosition Type where
     Str p -> p
     Bool p -> p
     Void p -> p
+    Array p _ -> p
+    Class p _ -> p
 
 instance HasPosition Expr where
   hasPosition = \case
@@ -157,6 +189,12 @@ instance HasPosition Expr where
     EMul p _ _ _ -> p
     Not p _ -> p
     Neg p _ -> p
+    EClass p _ -> p
+    EAttr p _ _ -> p
+    EMethod p _ _ _ -> p
+    ENull p _ -> p
+    EArr p _ _ -> p
+    EElem p _ _ -> p
     EVar p _ -> p
     EInt p _ -> p
     EString p _ -> p

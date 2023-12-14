@@ -37,6 +37,8 @@ compileTopDef (FnDef _ t x args ss) = do
     addEpilogue
 
     modify (\st -> st { newloc = 0 })
+compileTopDef (ClassDef _ _ _) = error "Todo"
+compileTopDef (ClassExt _ _ _ _) = error "Todo"
 
 compileBlock :: Block -> CM Bool
 compileBlock (Blck _ stmts) = do
@@ -133,6 +135,7 @@ compileStmt (While _ e s) = do
              , AsmLabel label2
              ]
     return False
+compileStmt (For _ _ _ _ _) = error "Todo"
 compileStmt (BStmt _ blk) = compileBlock blk
 compileStmt (Decl _ ty its) = do
     mapM_ (compileItem ty) its
@@ -204,6 +207,12 @@ compileExp (Neg _ e) = do
     compileExp e
     addInstr [AsmNeg "rax"]
     return TInt
+compileExp (EClass _ _) = error "Todo"
+compileExp (EAttr _ _ _) = error "Todo"
+compileExp (EMethod _ _ _ _) = error "Todo"
+compileExp (ENull _ _) = error "Todo"
+compileExp (EArr _ _ _) = error "Todo"
+compileExp (EElem _ _ _) = error "Todo"
 compileExp (EVar _ x) = do
     (t, loc) <- getLoc (takeStr x)
     addInstr [AsmMov "rax" loc]

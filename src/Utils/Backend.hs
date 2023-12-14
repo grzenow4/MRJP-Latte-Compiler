@@ -100,6 +100,7 @@ calcDeclSize (IfElse _ _ s1 s2) = calcDeclSize s1 + calcDeclSize s2
 calcDeclSize (While _ _ s) = calcDeclSize s
 calcDeclSize (BStmt _ blk) = calcLocSize blk
 calcDeclSize (Decl _ _ its) = 8 * length its
+calcDeclSize (For _ _ _ _ _) = error "Todo"
 calcDeclSize _ = 0
 
 takeRelOp :: RelOp -> String
