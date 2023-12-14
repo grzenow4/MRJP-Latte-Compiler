@@ -86,9 +86,12 @@ data Expr' a
     | EClass a Ident
     | EAttr a (Expr' a) Ident
     | EMethod a (Expr' a) Ident [Expr' a]
-    | ENull a Ident
     | EArr a (Type' a) (Expr' a)
     | EElem a (Expr' a) (Expr' a)
+    | ESelf a
+    | ENull a
+    | ENullCast a (Type' a)
+    | ENullClss a (Expr' a)
     | EVar a Ident
     | EInt a Integer
     | EString a String
@@ -192,9 +195,12 @@ instance HasPosition Expr where
     EClass p _ -> p
     EAttr p _ _ -> p
     EMethod p _ _ _ -> p
-    ENull p _ -> p
     EArr p _ _ -> p
     EElem p _ _ -> p
+    ESelf p -> p
+    ENull p -> p
+    ENullCast p _ -> p
+    ENullClss p _ -> p
     EVar p _ -> p
     EInt p _ -> p
     EString p _ -> p

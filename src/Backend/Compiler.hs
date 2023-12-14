@@ -210,9 +210,12 @@ compileExp (Neg _ e) = do
 compileExp (EClass _ _) = error "Todo"
 compileExp (EAttr _ _ _) = error "Todo"
 compileExp (EMethod _ _ _ _) = error "Todo"
-compileExp (ENull _ _) = error "Todo"
 compileExp (EArr _ _ _) = error "Todo"
 compileExp (EElem _ _ _) = error "Todo"
+compileExp (ESelf _) = error "Todo"
+compileExp (ENull _) = error "Todo"
+compileExp (ENullCast _ _) = error "Todo"
+compileExp (ENullClss _ _) = error "Todo"
 compileExp (EVar _ x) = do
     (t, loc) <- getLoc (takeStr x)
     addInstr [AsmMov "rax" loc]

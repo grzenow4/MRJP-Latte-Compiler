@@ -3,37 +3,65 @@ module Frontend.TypeChecker where
 import Control.Monad.Except
 import Control.Monad.State
 import qualified Data.Map as Map
+import qualified Data.Set as Set
 
 import Latte.AbsLatte
 import Utils.Common
 import Utils.Frontend
 
-assertArgs :: Arg -> Expr -> TCM ()
-assertArgs (Ar _ ty _) e = checkExp e >>= assertSame (takeExprPos e) (takeType ty)
+assertArg :: Arg -> Expr -> TCM ()
+assertArg (Ar _ ty _) e = checkExp e >>= assertSame (takeExprPos e) (takeType ty)
+
+checkField :: Field -> TCM ()
+checkField (AttrDef pos t x) = do
+    assertType pos (takeType t)
+    if takeType t == TVoid
+    then throwError $ newErr pos "Cannot declare an attribute of type void"
+    else return ()
+checkField (MethodDef pos t x args ss) = do
+    assertType pos (takeType t)
+    tcs <- get
+    modify (\st -> st { ret = Just (takeType t), set = Map.keysSet (env st) })
+    mapM_ (\(Ar p ty y) -> writeVar p (takeStr y) (takeType ty)) args
+    checkBlock ss
+    res <- gets returned
+    if not (res || takeType t == TVoid)
+    then throwError $ newErr pos ("Method " ++ (takeStr x) ++ " does not return")
+    else put tcs
 
 checkPrg :: [TopDef] -> TCM ()
-checkPrg tds = writeFunctions tds >> checkForMain >> mapM_ checkTopDef tds
+checkPrg tds = writeTopDefs tds >> checkForMain >> mapM_ checkTopDef tds
 
 checkTopDef :: TopDef -> TCM ()
 checkTopDef (FnDef pos t x args ss) = do
     tcs <- get
-    mapM_ (\(Ar p ty y) -> do
-        if (takeType ty == TVoid)
-        then throwError $ newErr p "Function argument cannot be of type void"
-        else writeType p (takeStr y) (takeType ty)) args
+    mapM_ (\(Ar p ty y) -> writeVar p (takeStr y) (takeType ty)) args
     modify (\st -> st { ret = Just (takeType t) })
     checkBlock ss
     res <- gets returned
     if not (res || takeType t == TVoid)
     then throwError $ newErr pos ("Function " ++ (takeStr x) ++ " does not return")
     else put tcs
-checkTopDef (ClassDef pos x fields) = error "Todo"
-checkTopDef (ClassExt pos x y fields) = error "Todo"
+checkTopDef (ClassDef pos x fields) = do
+    tcs <- get
+    Clss cenv _ _ <- getClass pos (takeStr x)
+    modify (\st -> st { env = cenv, self = Just (takeStr x) })
+    mapM_ checkField fields
+    put tcs
+checkTopDef (ClassExt pos x y fields) = do
+    checkExtend pos (takeStr x) (Set.empty)
+    tcs <- get
+    Clss cenv _ _ <- getClass pos (takeStr x)
+    modify (\st -> st { env = cenv, self = Just (takeStr x) })
+    prepareEnvExt pos (takeStr y)
+    mapM_ (checkMethodExt $ takeStr y) fields
+    mapM_ checkField fields
+    put tcs
 
 checkBlock :: Block -> TCM ()
 checkBlock (Blck _ ss) = do
     tcs <- get
-    modify (\s -> s { set = Map.keysSet (env s) })
+    modify (\st -> st { set = Map.keysSet (env st) })
     mapM_ checkStmt ss
     res <- gets returned
     put tcs { returned = res }
@@ -41,27 +69,58 @@ checkBlock (Blck _ ss) = do
 checkStmt :: Stmt -> TCM ()
 checkStmt (Empty _) = return ()
 checkStmt (Exp _ e) = checkExp e >> return ()
-checkStmt (Ass pos e1 e2) = case e1 of
-    EVar _ x -> do
-        t <- getType pos (takeStr x)
-        checkExp e2 >>= assertSame pos t
-    _ -> throwError $ newErr pos ("Cannot assign a value to an expression")
+checkStmt (Ass _ (EVar p x) e) = do
+    t1 <- getVar p (takeStr x)
+    t2 <- checkExp e
+    case (t1, t2) of
+        (TArr _, TNull) -> return ()
+        (TClass _, TNull) -> return ()
+        _ -> assertSame (takeExprPos e) t1 t2
+checkStmt (Ass pos (EAttr _ e1 x) e2) = do
+    t <- checkExp e1
+    case t of
+        TClass name -> do
+            t1 <- takeAttr (takeExprPos e1) (takeStr x) name
+            t2 <- checkExp e2
+            case (t1, t2) of
+                (TArr _, TNull) -> return ()
+                (TClass _, TNull) -> return ()
+                _ -> assertSame (takeExprPos e2) t1 t2
+        _ -> throwError $ newErr (takeExprPos e1) "Expression must be a class"
+checkStmt (Ass pos e1@(EElem _ _ _) e2) = do
+    t1 <- checkExp e1
+    t2 <- checkExp e2
+    case (t1, t2) of
+        (TClass _, TNull) -> return ()
+        _ -> assertSame (takeExprPos e2) t1 t2
+checkStmt (Ass pos _ _) = throwError $ newErr pos "Cannot assign to an expression"
 checkStmt (Incr pos e) = case e of
-    EVar _ x -> do
-        getType pos (takeStr x) >>= assertInt pos
-    _ -> throwError $ newErr pos ("Cannot increment an expression")
+    EVar _ x -> getVar pos (takeStr x) >>= assertInt pos
+    EAttr _ e1 x -> do
+        t <- checkExp e1
+        case t of
+            TClass name -> takeAttr pos (takeStr x) name >>= assertInt pos
+            _ -> throwError $ newErr (takeExprPos e1) "Expression must be a class"
+    EElem _ _ _ -> checkExp e >>= assertInt pos
+    _ -> throwError $ newErr pos "Cannot increment an expression"
 checkStmt (Decr pos e) = case e of
-    EVar _ x -> do
-        getType pos (takeStr x) >>= assertInt pos
-    _ -> throwError $ newErr pos ("Cannot decrement an expression")
+    EVar _ x -> getVar pos (takeStr x) >>= assertInt pos
+    EAttr _ e1 x -> do
+        t <- checkExp e1
+        case t of
+            TClass name -> takeAttr pos (takeStr x) name >>= assertInt pos
+            _ -> throwError $ newErr (takeExprPos e1) "Expression must be a class"
+    EElem _ _ _ -> checkExp e >>= assertInt pos
+    _ -> throwError $ newErr pos "Cannot decrement an expression"
 checkStmt (Ret pos e) = do
     ret <- gets ret
     case ret of
         Just t -> do
             expTy <- checkExp e
-            if expTy == TVoid
-            then throwError $ newErr pos "Cannot return void"
-            else assertSame pos t expTy >> modify (\st -> st { returned = True })
+            case (t, expTy) of
+                (_, TVoid) -> throwError $ newErr pos "Cannot return void"
+                (TClass _, TNull) -> modify (\st -> st { returned = True })
+                _ -> assertSame (takeExprPos e) t expTy >> modify (\st -> st { returned = True })
         Nothing -> throwError $ newErr pos "Invalid use of return"
 checkStmt (VRet pos) = do
     ret <- gets ret
@@ -96,71 +155,123 @@ checkStmt (While pos e s) = do
     case e of
         ETrue _ -> put tcs { returned = res }
         _ -> put tcs
-checkStmt (For pos t x e s) = error "Todo"
+checkStmt (For pos t x e s) = do
+    tcs <- get
+    ty <- checkExp e
+    case ty of
+        TArr typ -> do
+            assertSame pos typ (takeType t)
+            modify (\st -> st { set = Map.keysSet (env st) })
+            writeVar pos (takeStr x) (takeType t)
+            case s of
+                BStmt _ (Blck _ ss) -> mapM_ checkStmt ss
+                _ -> mapM_ checkStmt [s]
+            put tcs
+        _ -> throwError $ newErr (takeExprPos e) "Can only iterate over an array"
 checkStmt (BStmt _ ss) = checkBlock ss
 checkStmt (Decl _ t its) = mapM_ (\it -> do
     let x = itemStr it
-    let ty = takeType t
+    let t1 = takeType t
     case it of
-        NoInit pos _ -> writeType pos x ty
-        Init pos _ e -> checkExp e >>= assertSame pos ty >> writeType pos x ty
+        NoInit pos _ -> writeVar pos x t1
+        Init pos _ e -> do
+            t2 <- checkExp e
+            case (t1, t2) of
+                (TArr _, TNull) -> writeVar pos x t1
+                (TClass _, TNull) -> writeVar pos x t1
+                _ -> assertSame (takeExprPos e) t1 t2 >> writeVar pos x t1
     ) its
 
 checkExp :: Expr -> TCM TType
-checkExp (EOr pos e1 e2) = do
-    checkExp e1 >>= assertBool pos
-    checkExp e2 >>= assertBool pos
+checkExp (EOr _ e1 e2) = do
+    checkExp e1 >>= assertBool (takeExprPos e1)
+    checkExp e2 >>= assertBool (takeExprPos e2)
     return TBool
-checkExp (EAnd pos e1 e2) = do
-    checkExp e1 >>= assertBool pos
-    checkExp e2 >>= assertBool pos
+checkExp (EAnd _ e1 e2) = do
+    checkExp e1 >>= assertBool (takeExprPos e1)
+    checkExp e2 >>= assertBool (takeExprPos e2)
     return TBool
 checkExp (ERel pos e1 _ e2) = do
     t1 <- checkExp e1
     t2 <- checkExp e2
     case (t1, t2) of
-        (TVoid, TVoid) -> throwError $ newErr pos "Cannot compare void types"
-        (TBool, TBool) -> throwError $ newErr pos "Cannot compare boolean types"
-        _ -> assertSame pos t1 t2
-    return TBool
+        (TClass x, TClass y) -> do
+            res1 <- isSuperClass pos x y
+            res2 <- isSuperClass pos y x
+            if res1 || res2
+            then return TBool
+            else throwError $ newErr pos ("Cannot compare class " ++ x ++ " with class " ++ y)
+        _ -> assertSame (takeExprPos e2) t1 t2 >> return TBool
 checkExp (EAdd pos e1 op e2) = do
     t1 <- checkExp e1
     t2 <- checkExp e2
     case (t1, t2, op) of
         (TInt, TInt, _) -> return TInt
-        (TStr, TStr, (Plus _)) -> return TStr
+        (TStr, TStr, Plus _) -> return TStr
+        (TStr, TStr, Minus _) -> throwError $ newErr pos "Cannot substract strings"
         _ -> throwError $ newErr pos ("Could not add variable of type " ++ show t1 ++ " to the variable of type " ++ show t2)
-checkExp (EMul pos e1 _ e2) = do
-    checkExp e1 >>= assertInt pos
-    checkExp e2 >>= assertInt pos
+checkExp (EMul _ e1 _ e2) = do
+    checkExp e1 >>= assertInt (takeExprPos e1)
+    checkExp e2 >>= assertInt (takeExprPos e2)
     return TInt
-checkExp (Not pos e) = do
-    checkExp e >>= assertBool pos
-    return TBool
-checkExp (Neg pos e) = do
-    checkExp e >>= assertInt pos
-    return TInt
-checkExp (EClass pos x) = error "Todo"
-checkExp (EAttr pos e x) = error "Todo"
-checkExp (EMethod pos e x es) = error "Todo"
-checkExp (ENull pos x) = error "Todo"
-checkExp (EArr pos t e) = error "Todo"
-checkExp (EElem pos e1 e2) = error "Todo"
-checkExp (EVar pos x) = getType pos (takeStr x)
+checkExp (Not _ e) = checkExp e >>= assertBool (takeExprPos e) >> return TBool
+checkExp (Neg _ e) = checkExp e >>= assertInt (takeExprPos e) >> return TInt
+checkExp (EClass pos x) = do
+    let name = takeStr x
+    getClass pos name
+    return $ TClass name
+checkExp (EAttr pos e x) = do
+    let attr = takeStr x
+    t <- checkExp e
+    case t of
+        TArr _ -> if attr == "length" then return TInt else throwError $ newErr pos ("An array has no attribute " ++ attr)
+        TClass name -> takeAttr pos attr name
+        _ -> throwError $ newErr (takeExprPos e) "Expression must be an array or a class"
+checkExp (EMethod pos e x es) = do
+    t <- checkExp e
+    case t of
+        TClass name -> do
+            Func ty args <- takeMethod pos (takeStr x) name
+            if length args == length es
+            then mapM_ (\(arg, e) -> assertArg arg e) (zip args es) >> return ty
+            else throwError $ newErr pos "Wrong number of arguments passed to a method"
+        _ -> throwError $ newErr (takeExprPos e) "Expression must be a class"
+checkExp (EArr pos t e) = do
+    checkExp e >>= assertInt (takeExprPos e)
+    case takeType t of
+        TVoid -> throwError $ newErr pos "Cannot declare an array of voids"
+        TArr _ -> throwError $ newErr pos "Can declare only one-dimensional arrays"
+        TClass x -> getClass pos x >> (return $ TArr (TClass x))
+        ty -> return $ TArr ty
+checkExp (EElem _ e1 e2) = do
+    t <- checkExp e1
+    case t of
+        TArr ty -> checkExp e2 >>= assertInt (takeExprPos e2) >> return ty
+        _ -> throwError $ newErr (takeExprPos e1) "Expression must be an array"
+checkExp (ESelf pos) = do
+    ctx <- gets self
+    case ctx of
+        Just name -> return $ TClass name
+        Nothing -> throwError $ newErr pos "Invalid use of self"
+checkExp (ENull pos) = return TNull
+checkExp (ENullCast pos t) = case takeType t of
+    ty@(TArr _) -> assertType pos ty >> return ty
+checkExp (ENullClss pos e) = case e of
+    (EVar _ x) -> checkExp (EClass pos x)
+    _ -> throwError $ newErr pos "Invalid null cast"
+checkExp (EVar pos x) = getVar pos (takeStr x)
 checkExp (EInt _ _) = return TInt
 checkExp (EString _ _) = return TStr
 checkExp (ETrue _) = return TBool
 checkExp (EFalse _) = return TBool
 checkExp (EApp pos x es) =
     if (takeStr x) == "main"
-    then throwError $ newErr pos ("main() cannot be invoked")
+    then throwError $ newErr pos "main() cannot be invoked"
     else do
-        t <- getType pos (takeStr x)
-        case t of
-            TFun ty args _ -> if length args == length es
-                then mapM_ (\(arg, e) -> assertArgs arg e) (zip args es) >> return ty
-                else throwError $ newErr pos "Wrong number of arguments passed to a function"
-            _ -> throwError $ newErr pos ((takeStr x) ++ " is not a function")
+        Func t args <- getFun pos (takeStr x)
+        if length args == length es
+        then mapM_ (\(arg, e) -> assertArg arg e) (zip args es) >> return t
+        else throwError $ newErr pos "Wrong number of arguments passed to a function"
 
 typeCheck :: Program -> Either ErrSt ()
 typeCheck (Prog _ prg) = fst $ runState (runExceptT (checkPrg prg)) initState

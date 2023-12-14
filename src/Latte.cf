@@ -32,12 +32,13 @@ separator  Stmt "" ;
 separator nonempty Item "," ;
 
 -- Types ---------------------------------------------------
-Int.       Type ::= "int" ;
-Str.       Type ::= "string" ;
-Bool.      Type ::= "boolean" ;
-Void.      Type ::= "void" ;
-Array.     Type ::= Type "[]" ;
+Int.       Type1 ::= "int" ;
+Str.       Type1 ::= "string" ;
+Bool.      Type1 ::= "boolean" ;
+Void.      Type1 ::= "void" ;
+Array.     Type1 ::= Type "[]" ;
 Class.     Type ::= Ident ;
+_.         Type ::= Type1 ;
 
 -- Expressions ---------------------------------------------
 EOr.       Expr ::= Expr1 "||" Expr ;
@@ -50,9 +51,12 @@ Neg.       Expr5 ::= "-" Expr6 ;
 EClass.    Expr6 ::= "new" Ident ;
 EAttr.     Expr7 ::= Expr6 "." Ident ;
 EMethod.   Expr7 ::= Expr6 "." Ident "(" [Expr] ")" ;
-ENull.     Expr7 ::= "(" Ident ")" "null" ;
 EArr.      Expr7 ::= "new" Type "[" Expr "]" ;
 EElem.     Expr7 ::= Expr7 "[" Expr "]" ;
+ESelf.     Expr7 ::= "self" ;
+ENull.     Expr7 ::= "null" ;
+ENullCast. Expr7 ::= "(" Type1 ")" "null" ;
+ENullClss. Expr7 ::= "(" Expr ")" "null" ;
 EVar.      Expr7 ::= Ident ;
 EInt.      Expr7 ::= Integer ;
 EString.   Expr7 ::= String ;
