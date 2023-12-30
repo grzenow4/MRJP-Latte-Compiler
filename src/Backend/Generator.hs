@@ -2,6 +2,8 @@ module Backend.Generator where
 
 data AsmInstr = 
     AsmMov String String |
+    AsmMovzx String String |
+    AsmLea String String |
     AsmAdd String String |
     AsmSub String String |
     AsmMul String String |
@@ -14,16 +16,20 @@ data AsmInstr =
     AsmTest String String |
     AsmCmp String String |
     AsmSet String String |
-    AsmJe String |
+    AsmJmpRel String String |
     AsmJmp String |
     AsmSection String |
     AsmData String String |
     AsmLabel String |
+    AsmGlobal String |
+    AsmExtern String |
     AsmCqo |
     AsmRet
 
 instance Show AsmInstr where
     show (AsmMov s1 s2) = returnFmt $ "mov " ++ s1 ++ ", " ++ s2
+    show (AsmMovzx s1 s2) = returnFmt $ "movzx " ++ s1 ++ ", " ++ s2
+    show (AsmLea s1 s2) = returnFmt $ "lea " ++ s1 ++ ", " ++ s2
     show (AsmAdd s1 s2) = if s2 == "0" then "" else returnFmt $ "add " ++ s1 ++ ", " ++ s2
     show (AsmSub s1 s2) = if s2 == "0" then "" else returnFmt $ "sub " ++ s1 ++ ", " ++ s2
     show (AsmMul s1 s2) = returnFmt $ "imul " ++ s1 ++ ", " ++ s2
@@ -36,11 +42,13 @@ instance Show AsmInstr where
     show (AsmTest s1 s2) = returnFmt $ "test " ++ s1 ++ ", " ++ s2
     show (AsmCmp s1 s2) = returnFmt $ "cmp " ++ s1 ++ ", " ++ s2
     show (AsmSet op s) = returnFmt $ "set" ++ op ++ " " ++ s
-    show (AsmJe s) = returnFmt $ "je " ++ s
+    show (AsmJmpRel op s) = returnFmt $ "j" ++ op ++ " " ++ s
     show (AsmJmp s) = returnFmt $ "jmp " ++ s
-    show (AsmSection s) = "section " ++ s ++ ":\n"
-    show (AsmData s1 s2) = s1 ++ " db \'" ++ s2 ++ "\', 0\n"
+    show (AsmSection s) = "section " ++ s ++ "\n"
+    show (AsmData s1 s2) = s1 ++ " db \"" ++ s2 ++ "\", 0\n"
     show (AsmLabel s) = s ++ ":\n"
+    show (AsmGlobal s) = returnFmt $ "global " ++ s
+    show (AsmExtern s) = returnFmt $ "extern " ++ s
     show (AsmCqo) = returnFmt "cqo"
     show (AsmRet) = returnFmt "ret"
 
