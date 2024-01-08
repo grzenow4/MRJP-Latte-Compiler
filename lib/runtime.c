@@ -25,7 +25,7 @@ void printString(string s) {
 }
 
 void error() {
-    fprintf(stderr, "Runtime error\n");
+    fprintf(stderr, "runtime error\n");
     exit(1);
 }
 
