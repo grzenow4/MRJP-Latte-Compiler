@@ -132,8 +132,9 @@ checkStmt (If pos e s) = do
     checkExp e >>= assertBool (takeExprPos e)
     checkBlock (Blck pos [s])
     res <- gets returned
-    case e of
-        ETrue _ -> put tcs { returned = res }
+    case simplifyExpr e of
+        Right (SBool True) -> put tcs { returned = res }
+        Left err -> throwError err
         _ -> put tcs
 checkStmt (IfElse pos e s1 s2) = do
     tcs <- get
@@ -143,17 +144,19 @@ checkStmt (IfElse pos e s1 s2) = do
     put tcs
     checkBlock (Blck pos [s2])
     res2 <- gets returned
-    case e of
-        ETrue _ -> put tcs { returned = res1 }
-        EFalse _ -> put tcs { returned = res2 }
+    case simplifyExpr e of
+        Right (SBool True) -> put tcs { returned = res1 }
+        Right (SBool False) -> put tcs { returned = res2 }
+        Left err -> throwError err
         _ -> put tcs { returned = res1 && res2 }
 checkStmt (While pos e s) = do
     tcs <- get
     checkExp e >>= assertBool (takeExprPos e)
     checkBlock (Blck pos [s])
     res <- gets returned
-    case e of
-        ETrue _ -> put tcs { returned = res }
+    case simplifyExpr e of
+        Right (SBool True) -> put tcs { returned = res }
+        Left err -> throwError err
         _ -> put tcs
 checkStmt (For pos t x e s) = do
     tcs <- get
@@ -183,39 +186,61 @@ checkStmt (Decl _ t its) = mapM_ (\it -> do
     ) its
 
 checkExp :: Expr -> TCM TType
-checkExp (EOr _ e1 e2) = do
-    checkExp e1 >>= assertBool (takeExprPos e1)
-    checkExp e2 >>= assertBool (takeExprPos e2)
-    return TBool
-checkExp (EAnd _ e1 e2) = do
-    checkExp e1 >>= assertBool (takeExprPos e1)
-    checkExp e2 >>= assertBool (takeExprPos e2)
-    return TBool
-checkExp (ERel pos e1 _ e2) = do
-    t1 <- checkExp e1
-    t2 <- checkExp e2
-    case (t1, t2) of
-        (TClass x, TClass y) -> do
-            res1 <- isSuperClass pos x y
-            res2 <- isSuperClass pos y x
-            if res1 || res2
-            then return TBool
-            else throwError $ newErr pos ("Cannot compare class " ++ x ++ " with class " ++ y)
-        _ -> assertSame (takeExprPos e2) t1 t2 >> return TBool
-checkExp (EAdd pos e1 op e2) = do
-    t1 <- checkExp e1
-    t2 <- checkExp e2
-    case (t1, t2, op) of
-        (TInt, TInt, _) -> return TInt
-        (TStr, TStr, Plus _) -> return TStr
-        (TStr, TStr, Minus _) -> throwError $ newErr pos "Cannot substract strings"
-        _ -> throwError $ newErr pos ("Could not add variable of type " ++ show t1 ++ " to the variable of type " ++ show t2)
-checkExp (EMul _ e1 _ e2) = do
-    checkExp e1 >>= assertInt (takeExprPos e1)
-    checkExp e2 >>= assertInt (takeExprPos e2)
-    return TInt
-checkExp (Not _ e) = checkExp e >>= assertBool (takeExprPos e) >> return TBool
-checkExp (Neg _ e) = checkExp e >>= assertInt (takeExprPos e) >> return TInt
+checkExp e@(EOr _ e1 e2) = case simplifyExpr e of
+    Right (SBool _) -> return TBool
+    Left err -> throwError err
+    _ -> do
+        checkExp e1 >>= assertBool (takeExprPos e1)
+        checkExp e2 >>= assertBool (takeExprPos e2)
+        return TBool
+checkExp e@(EAnd _ e1 e2) = case simplifyExpr e of
+    Right (SBool _) -> return TBool
+    Left err -> throwError err
+    _ -> do
+        checkExp e1 >>= assertBool (takeExprPos e1)
+        checkExp e2 >>= assertBool (takeExprPos e2)
+        return TBool
+checkExp e@(ERel pos e1 _ e2) = case simplifyExpr e of
+    Right (SBool _) -> return TBool
+    Left err -> throwError err
+    _ -> do
+        t1 <- checkExp e1
+        t2 <- checkExp e2
+        case (t1, t2) of
+            (TClass x, TClass y) -> do
+                res1 <- isSuperClass pos x y
+                res2 <- isSuperClass pos y x
+                if res1 || res2
+                then return TBool
+                else throwError $ newErr pos ("Cannot compare class " ++ x ++ " with class " ++ y)
+            _ -> assertSame (takeExprPos e2) t1 t2 >> return TBool
+checkExp e@(EAdd pos e1 op e2) = case simplifyExpr e of
+    Right (SInt _) -> return TInt
+    Right (SStr _) -> return TStr
+    Left err -> throwError err
+    _ -> do
+        t1 <- checkExp e1
+        t2 <- checkExp e2
+        case (t1, t2, op) of
+            (TInt, TInt, _) -> return TInt
+            (TStr, TStr, Plus _) -> return TStr
+            (TStr, TStr, Minus _) -> throwError $ newErr pos "Cannot substract strings"
+            _ -> throwError $ newErr pos ("Could not add variable of type " ++ show t1 ++ " to the variable of type " ++ show t2)
+checkExp e@(EMul _ e1 _ e2) = case simplifyExpr e of
+    Right (SInt _) -> return TInt
+    Left err -> throwError err
+    _ -> do
+        checkExp e1 >>= assertInt (takeExprPos e1)
+        checkExp e2 >>= assertInt (takeExprPos e2)
+        return TInt
+checkExp e@(Not _ e1) = case simplifyExpr e of
+    Right (SBool _) -> return TBool
+    Left err -> throwError err
+    _ -> checkExp e1 >>= assertBool (takeExprPos e1) >> return TBool
+checkExp e@(Neg pos e1) = case simplifyExpr e of
+    Right (SInt n) -> return TInt
+    Left err -> throwError err
+    _ -> checkExp e1 >>= assertInt pos >> return TInt
 checkExp (EClass pos x) = do
     let name = takeStr x
     getClass pos name
@@ -237,16 +262,27 @@ checkExp (EMethod pos e x es) = do
             else throwError $ newErr pos "Wrong number of arguments passed to a method"
         _ -> throwError $ newErr (takeExprPos e) "Expression must be a class"
 checkExp (EArr pos t e) = do
-    checkExp e >>= assertInt (takeExprPos e)
+    case simplifyExpr e of
+        Right (SInt n) -> if n < 0
+                          then throwError $ newErr pos "An array must be of positive size"
+                          else return ()
+        Left err -> throwError err
+        _ -> checkExp e >>= assertInt (takeExprPos e)
     case takeType t of
         TVoid -> throwError $ newErr pos "Cannot declare an array of voids"
         TArr _ -> throwError $ newErr pos "Can declare only one-dimensional arrays"
         TClass x -> getClass pos x >> (return $ TArr (TClass x))
         ty -> return $ TArr ty
 checkExp (EElem _ e1 e2) = do
+    case simplifyExpr e2 of
+        Right (SInt n) -> if n < 0
+                          then throwError $ newErr (takeExprPos e2) "Cannot get a negative index of an array"
+                          else return ()
+        Left err -> throwError err
+        _ -> checkExp e2 >>= assertInt (takeExprPos e2)
     t <- checkExp e1
     case t of
-        TArr ty -> checkExp e2 >>= assertInt (takeExprPos e2) >> return ty
+        TArr ty -> return ty
         _ -> throwError $ newErr (takeExprPos e1) "Expression must be an array"
 checkExp (ESelf pos) = do
     ctx <- gets self
@@ -260,7 +296,10 @@ checkExp (ENullClss pos e) = case e of
     (EVar _ x) -> checkExp (EClass pos x)
     _ -> throwError $ newErr pos "Invalid null cast"
 checkExp (EVar pos x) = getVar pos (takeStr x)
-checkExp (EInt _ _) = return TInt
+checkExp (EInt pos n) = do
+    if checkBounds n
+    then return TInt
+    else throwError $ newErr pos ("Number " ++ show n ++ " is out of bounds")
 checkExp (EString _ _) = return TStr
 checkExp (ETrue _) = return TBool
 checkExp (EFalse _) = return TBool

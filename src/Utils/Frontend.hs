@@ -27,18 +27,7 @@ data TCSt = TCSt {
     returned :: Bool
 }
 
-type Pos = BNFC'Position
-data ErrSt = ErrSt {
-    pos :: Pos,
-    reason :: String
-}
-
 type TCM a = ExceptT ErrSt (State TCSt) a
-
-instance Show ErrSt where
-    show err = case (pos err, reason err) of
-        (Just (row, col), s) -> "(" ++ show row ++ ":" ++ show col ++ "): " ++ s
-        (_, s) -> "(_:_): " ++ s
 
 initFunc :: FEnv
 initFunc = Map.fromList [
@@ -57,9 +46,6 @@ initState = TCSt { env = Map.empty
                  , set = Set.empty
                  , self = Nothing
                  , returned = False }
-
-newErr :: Pos -> String -> ErrSt
-newErr pos s = ErrSt { pos = pos, reason = s }
 
 writeVar :: Pos -> Var -> TType -> TCM ()
 writeVar pos x t = do

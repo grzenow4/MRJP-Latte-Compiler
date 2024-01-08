@@ -136,12 +136,17 @@ compileStmt (Incr _ (EAttr _ e x)) = do
     addInstr [AsmAdd ("QWORD [rax + 8 * " ++ show offset ++ "]") "1"]
     return False
 compileStmt (Incr _ (EElem _ e1 e2)) = do
-    compileExp e2
-    addInstr [AsmPush "rax"]
-    compileExp e1
-    addInstr [ AsmPop "rdx"
-             , AsmAdd "QWORD [rax + 8 + 8 * rdx]" "1"
-             ]
+    case simplifyExpr e2 of
+        Right (SInt n) -> do
+            compileExp e1
+            addInstr [AsmAdd ("QWORD [rax + 8 + 8 * " ++ show n ++ "]") "1"]
+        _ -> do
+            compileExp e2
+            addInstr [AsmPush "rax"]
+            compileExp e1
+            addInstr [ AsmPop "rdx"
+                     , AsmAdd "QWORD [rax + 8 + 8 * rdx]" "1"
+                     ]
     return False
 compileStmt (Decr _ (EVar _ x)) = do
     res <- getLoc (takeStr x)
@@ -167,12 +172,17 @@ compileStmt (Decr _ (EAttr _ e x)) = do
     addInstr [AsmSub ("QWORD [rax + 8 * " ++ show offset ++ "]") "1"]
     return False
 compileStmt (Decr _ (EElem _ e1 e2)) = do
-    compileExp e2
-    addInstr [AsmPush "rax"]
-    compileExp e1
-    addInstr [ AsmPop "rdx"
-             , AsmSub "QWORD [rax + 8 + 8 * rdx]" "1"
-             ]
+    case simplifyExpr e2 of
+        Right (SInt n) -> do
+            compileExp e1
+            addInstr [AsmSub ("QWORD [rax + 8 + 8 * " ++ show n ++ "]") "1"]
+        _ -> do
+            compileExp e2
+            addInstr [AsmPush "rax"]
+            compileExp e1
+            addInstr [ AsmPop "rdx"
+                     , AsmSub "QWORD [rax + 8 + 8 * rdx]" "1"
+                     ]
     return False
 compileStmt (Ret _ e) = do
     compileExp e
@@ -181,23 +191,27 @@ compileStmt (Ret _ e) = do
 compileStmt (VRet _) = do
     addInstr [AsmMov "rax" "0", AsmJmp ".end"]
     return True
-compileStmt (If _ e s) = do
-    label <- nextLabel
-    compileExp e
-    addInstr [AsmTest "rax" "rax", AsmJmpRel "e" label]
-    compileStmt s
-    addInstr [AsmLabel label]
-    return False
-compileStmt (IfElse _ e s1 s2) = do
-    label1 <- nextLabel
-    label2 <- nextLabel
-    compileExp e
-    addInstr [AsmTest "rax" "rax", AsmJmpRel "e" label1]
-    ret1 <- compileStmt s1
-    addInstr [AsmJmp label2, AsmLabel label1]
-    ret2 <- compileStmt s2
-    addInstr [AsmLabel label2]
-    return $ ret1 && ret2
+compileStmt (If _ e s) = case simplifyExpr e of
+    Right (SBool b) -> if b then compileStmt s else return False
+    _ -> do
+        label <- nextLabel
+        compileExp e
+        addInstr [AsmTest "rax" "rax", AsmJmpRel "e" label]
+        compileStmt s
+        addInstr [AsmLabel label]
+        return False
+compileStmt (IfElse _ e s1 s2) = case simplifyExpr e of
+    Right (SBool b) -> if b then compileStmt s1 else compileStmt s2
+    _ -> do
+        label1 <- nextLabel
+        label2 <- nextLabel
+        compileExp e
+        addInstr [AsmTest "rax" "rax", AsmJmpRel "e" label1]
+        ret1 <- compileStmt s1
+        addInstr [AsmJmp label2, AsmLabel label1]
+        ret2 <- compileStmt s2
+        addInstr [AsmLabel label2]
+        return $ ret1 && ret2
 compileStmt (While _ e s) = do
     label1 <- nextLabel
     label2 <- nextLabel
@@ -238,69 +252,101 @@ compileStmt (Decl _ ty its) = do
     return False
 
 compileExp :: Expr -> CM TType
-compileExp (EOr _ e1 e2) = do
-    label1 <- nextLabel
-    label2 <- nextLabel
-    compileExp e1
-    addInstr [ AsmTest "rax" "rax"
-             , AsmJmpRel "e" label1
-             , AsmMov "rax" "1"
-             , AsmJmp label2
-             , AsmLabel label1
-             ]
-    compileExp e2
-    addInstr [AsmLabel label2]
-    return TBool
-compileExp (EAnd _ e1 e2) = do
-    label1 <- nextLabel
-    label2 <- nextLabel
-    compileExp e1
-    addInstr [AsmTest "rax" "rax", AsmJmpRel "e" label1]
-    compileExp e2
-    addInstr [ AsmJmp label2
-             , AsmLabel label1
-             , AsmMov "rax" "0"
-             , AsmLabel label2
-             ]
-    return TBool
-compileExp (ERel _ e1 op e2) = do
-    compileExp e2
-    addInstr [AsmPush "rax"]
-    compileExp e1
-    addInstr [ AsmPop "rbx"
-             , AsmCmp "rax" "rbx"
-             , AsmSet (takeRelOp op) "al"
-             , AsmMovzx "rax" "al"
-             ]
-    return TBool
-compileExp (EAdd _ e1 op e2) = do
-    t2 <- compileExp e2
-    addInstr [AsmPush "rax"]
-    t1 <- compileExp e1
-    addInstr [AsmPop "rbx"]
-    case (t1, t2) of
-        (TInt, TInt) -> addAddOp op "rax" "rbx"
-        (TStr, TStr) -> addInstr [ AsmMov "rdi" "rax"
-                                 , AsmMov "rsi" "rbx"
-                                 , AsmCall "__concatString"
-                                 ]
-        _ -> error "Typechecker failed"
-    return t1
-compileExp (EMul _ e1 op e2) = do
-    compileExp e2
-    addInstr [AsmPush "rax"]
-    compileExp e1
-    addInstr [AsmPop "rbx"]
-    addMulOp op "rax" "rbx"
-    return TInt
-compileExp (Not _ e) = do
-    compileExp e
-    addInstr [AsmXor "rax" "1"]
-    return TBool
-compileExp (Neg _ e) = do
-    compileExp e
-    addInstr [AsmNeg "rax"]
-    return TInt
+compileExp e@(EOr _ e1 e2) = case simplifyExpr e of
+    Right (SBool b) -> do
+        addInstr [AsmMov "rax" (if b then "1" else "0")]
+        return TBool
+    _ -> do
+        label1 <- nextLabel
+        label2 <- nextLabel
+        compileExp e1
+        addInstr [ AsmTest "rax" "rax"
+                 , AsmJmpRel "e" label1
+                 , AsmMov "rax" "1"
+                 , AsmJmp label2
+                 , AsmLabel label1
+                 ]
+        compileExp e2
+        addInstr [AsmLabel label2]
+        return TBool
+compileExp e@(EAnd _ e1 e2) = case simplifyExpr e of
+    Right (SBool b) -> do
+        addInstr [AsmMov "rax" (if b then "1" else "0")]
+        return TBool
+    _ -> do
+        label1 <- nextLabel
+        label2 <- nextLabel
+        compileExp e1
+        addInstr [AsmTest "rax" "rax", AsmJmpRel "e" label1]
+        compileExp e2
+        addInstr [ AsmJmp label2
+                 , AsmLabel label1
+                 , AsmMov "rax" "0"
+                 , AsmLabel label2
+                 ]
+        return TBool
+compileExp e@(ERel _ e1 op e2) = case simplifyExpr e of
+    Right (SBool b) -> do
+        addInstr [AsmMov "rax" (if b then "1" else "0")]
+        return TBool
+    _ -> do
+        compileExp e2
+        addInstr [AsmPush "rax"]
+        compileExp e1
+        addInstr [ AsmPop "rbx"
+                , AsmCmp "rax" "rbx"
+                , AsmSet (takeRelOp op) "al"
+                , AsmMovzx "rax" "al"
+                ]
+        return TBool
+compileExp e@(EAdd _ e1 op e2) = case simplifyExpr e of
+    Right (SInt n) -> do
+        addInstr [AsmMov "rax" (show n)]
+        return TInt
+    Right (SStr s) -> do
+        l <- getLocStr s
+        addInstr [AsmMov "rax" l]
+        return TStr
+    _ -> do
+        t2 <- compileExp e2
+        addInstr [AsmPush "rax"]
+        t1 <- compileExp e1
+        addInstr [AsmPop "rbx"]
+        case (t1, t2) of
+            (TInt, TInt) -> addAddOp op "rax" "rbx"
+            (TStr, TStr) -> addInstr [ AsmMov "rdi" "rax"
+                                     , AsmMov "rsi" "rbx"
+                                     , AsmCall "__concatString"
+                                     ]
+            _ -> error "Typechecker failed"
+        return t1
+compileExp e@(EMul _ e1 op e2) = case simplifyExpr e of
+    Right (SInt n) -> do
+        addInstr [AsmMov "rax" (show n)]
+        return TInt
+    _ -> do
+        compileExp e2
+        addInstr [AsmPush "rax"]
+        compileExp e1
+        addInstr [AsmPop "rbx"]
+        addMulOp op "rax" "rbx"
+        return TInt
+compileExp e@(Not _ e1) = case simplifyExpr e of
+    Right (SBool b) -> do
+        addInstr [AsmMov "rax" (if b then "1" else "0")]
+        return TBool
+    _ -> do
+        compileExp e1
+        addInstr [AsmXor "rax" "1"]
+        return TBool
+compileExp e@(Neg _ e1) = case simplifyExpr e of
+    Right (SInt n) -> do
+        addInstr [AsmMov "rax" (show n)]
+        return TInt
+    _ -> do
+        compileExp e1
+        addInstr [AsmNeg "rax"]
+        return TInt
 compileExp (EClass _ x) = do
     let name = takeStr x
     size <- getClassSize name
@@ -327,12 +373,15 @@ compileExp (EMethod _ e x es) = do
     callFunction es toCall True
     return ty
 compileExp (EArr _ t e) = do
-    compileExp e
-    addInstr [AsmMov "rdi" "rax", AsmCall "__allocArray"]
+    case simplifyExpr e of
+        Right (SInt n) -> addInstr [AsmMov "rdi" (show n)]
+        _ -> compileExp e >> addInstr [AsmMov "rdi" "rax"]
+    addInstr [AsmCall "__allocArray"]
     return $ TArr (takeType t)
 compileExp (EElem _ e1 e2) = do
-    compileExp e2
-    addInstr [AsmPush "rax"]
+    case simplifyExpr e2 of
+        Right (SInt n) -> addInstr [AsmPush (show n)]
+        _ -> compileExp e2 >> addInstr [AsmPush "rax"]
     t <- compileExp e1
     let TArr ty = t
     addInstr [AsmPop "rdx", AsmMov "rax" "[rax + 8 + 8 * rdx]"]
