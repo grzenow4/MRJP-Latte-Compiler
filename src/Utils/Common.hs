@@ -3,14 +3,21 @@ module Utils.Common where
 import Latte.AbsLatte
 
 data SType = SInt Integer | SStr String | SBool Bool | Undefined
-data TType = TVoid | TInt | TStr | TBool | TNull
-           | TArr TType | TClass String deriving Eq
+data TType
+    = TVoid
+    | TInt
+    | TStr
+    | TBool
+    | TNull
+    | TArr TType
+    | TClass String
+    deriving (Eq)
 
 type Pos = BNFC'Position
-data ErrSt = ErrSt {
-    pos :: Pos,
-    reason :: String
-}
+data ErrSt = ErrSt
+    { pos :: Pos
+    , reason :: String
+    }
 
 instance Show TType where
     show TVoid = "void"
@@ -27,7 +34,7 @@ instance Show ErrSt where
         (_, s) -> "(_:_): " ++ s
 
 newErr :: Pos -> String -> ErrSt
-newErr pos s = ErrSt { pos = pos, reason = s }
+newErr pos s = ErrSt {pos = pos, reason = s}
 
 takeStr :: Ident -> String
 takeStr (Ident x) = x
@@ -84,8 +91,8 @@ simplifyExpr (EAdd pos e1 op e2) =
         (Right (SInt n1), Right (SInt n2), _) ->
             let res = aop op n1 n2
              in if checkBounds res
-                then Right $ SInt res
-                else Left $ newErr pos ("Number " ++ show res ++ " is out of bounds")
+                    then Right $ SInt res
+                    else Left $ newErr pos ("Number " ++ show res ++ " is out of bounds")
         (Right (SStr s1), Right (SStr s2), Plus _) -> Right $ SStr (s1 ++ s2)
         _ -> Right Undefined
 simplifyExpr (EMul pos e1 op e2) =
@@ -95,8 +102,8 @@ simplifyExpr (EMul pos e1 op e2) =
         (Right (SInt n1), Right (SInt n2), _) ->
             let res = mop op n1 n2
              in if checkBounds res
-                then Right $ SInt res
-                else Left $ newErr pos ("Number " ++ show res ++ " is out of bounds")
+                    then Right $ SInt res
+                    else Left $ newErr pos ("Number " ++ show res ++ " is out of bounds")
         _ -> Right Undefined
 simplifyExpr (Not _ e) =
     case simplifyExpr e of
@@ -107,8 +114,8 @@ simplifyExpr (Neg pos e) =
         Right (SInt n) ->
             let res = -n
              in if checkBounds res
-                then Right (SInt res)
-                else Left $ newErr pos ("Number " ++ show res ++ " is out of bounds")
+                    then Right (SInt res)
+                    else Left $ newErr pos ("Number " ++ show res ++ " is out of bounds")
         _ -> Right Undefined
 simplifyExpr (EInt _ n) = Right $ SInt n
 simplifyExpr (EString _ s) = Right $ SStr s

@@ -20,7 +20,7 @@ compileArgs args = do
     let regs = ["rdi", "rsi", "rdx", "rcx", "r8", "r9"]
         regArgs = take 6 args
         stackExpr = drop 6 args
-        offset = reverse $ take (length stackExpr) [16, 24..]
+        offset = reverse $ take (length stackExpr) [16, 24 ..]
         mem = map (\off -> "QWORD [rbp + " ++ show off ++ "]") offset
 
     mapM_ (\(x, t) -> newLoc >>= writeLoc x t) regArgs
@@ -36,31 +36,36 @@ compileTopDef (FnDef _ t x args ss) = do
     addInstr [AsmSub "rsp" (show locsize)]
     compileBlock ss
     addEpilogue
-    modify (\st -> st { newloc = 0 })
+    modify (\st -> st {newloc = 0})
 compileTopDef (ClassDef _ name fields) = do
-    mapM_ (\field -> case field of
-        (AttrDef _ _ _) -> return ()
-        (MethodDef _ _ x args ss) -> do
-            let locsize = calcLocSize ss
-            addPrologue $ methodName (takeStr name) (takeStr x)
-            compileArgs $ [("self", TClass (takeStr name))] ++ parseArgs args
-            addInstr [AsmSub "rsp" (show locsize)]
-            compileBlock ss
-            addEpilogue
-            modify (\st -> st { newloc = 0 })) fields
+    mapM_
+        ( \field -> case field of
+            (AttrDef _ _ _) -> return ()
+            (MethodDef _ _ x args ss) -> do
+                let locsize = calcLocSize ss
+                addPrologue $ methodName (takeStr name) (takeStr x)
+                compileArgs $ [("self", TClass (takeStr name))] ++ parseArgs args
+                addInstr [AsmSub "rsp" (show locsize)]
+                compileBlock ss
+                addEpilogue
+                modify (\st -> st {newloc = 0})
+        )
+        fields
 compileTopDef (ClassExt p x y fields) = compileTopDef (ClassDef p x fields)
 
 compileBlock :: Block -> CM Bool
 compileBlock (Blck _ stmts) = do
     env <- gets env
     res <- helper stmts
-    modify (\st -> st { env = env })
-    return res where
-        helper :: [Stmt] -> CM Bool
-        helper [] = return False
-        helper (s:ss) = do
-            ret <- compileStmt s
-            if ret then return True
+    modify (\st -> st {env = env})
+    return res
+  where
+    helper :: [Stmt] -> CM Bool
+    helper [] = return False
+    helper (s : ss) = do
+        ret <- compileStmt s
+        if ret
+            then return True
             else helper ss
 
 compileItem :: Type -> Item -> CM ()
@@ -86,11 +91,12 @@ compileStmt (Ass _ (EVar _ x) e) = do
             res <- getLoc "self"
             let Just (TClass name, l) = res
             (_, offset) <- getAttr name (takeStr x)
-            addInstr [ AsmPush "rax"
-                     , AsmMov "rax" l
-                     , AsmPop "rdx"
-                     , AsmMov ("[rax + 8 * " ++ show offset ++ "]") "rdx"
-                     ]
+            addInstr
+                [ AsmPush "rax"
+                , AsmMov "rax" l
+                , AsmPop "rdx"
+                , AsmMov ("[rax + 8 * " ++ show offset ++ "]") "rdx"
+                ]
     return False
 compileStmt (Ass _ (EAttr _ e1 x) e2) = do
     compileExp e2
@@ -106,28 +112,31 @@ compileStmt (Ass _ (EElem _ e1 e2) e3) = do
     compileExp e2
     addInstr [AsmPush "rax"]
     compileExp e1
-    addInstr [ AsmPop "rdx"
-             , AsmPop "r10"
-             , AsmMov "[rax + 8 + 8 * rdx]" "r10"
-             ]
+    addInstr
+        [ AsmPop "rdx"
+        , AsmPop "r10"
+        , AsmMov "[rax + 8 + 8 * rdx]" "r10"
+        ]
     return False
 compileStmt (Ass _ _ _) = error "Typechecker failed"
 compileStmt (Incr _ (EVar _ x)) = do
     res <- getLoc (takeStr x)
     case res of
         Just (_, l) -> do
-            addInstr [ AsmMov "rax" l
-                     , AsmAdd "rax" "1"
-                     , AsmMov l "rax"
-                     ]
+            addInstr
+                [ AsmMov "rax" l
+                , AsmAdd "rax" "1"
+                , AsmMov l "rax"
+                ]
         Nothing -> do
             res <- getLoc "self"
             let Just (TClass name, l) = res
             (_, offset) <- getAttr name (takeStr x)
-            addInstr [ AsmMov "rax" l
-                     , AsmAdd ("QWORD [rax + 8 * " ++ show offset ++ "]") "1"
-                     , AsmMov l "rax"
-                     ]
+            addInstr
+                [ AsmMov "rax" l
+                , AsmAdd ("QWORD [rax + 8 * " ++ show offset ++ "]") "1"
+                , AsmMov l "rax"
+                ]
     return False
 compileStmt (Incr _ (EAttr _ e x)) = do
     t <- compileExp e
@@ -144,26 +153,29 @@ compileStmt (Incr _ (EElem _ e1 e2)) = do
             compileExp e2
             addInstr [AsmPush "rax"]
             compileExp e1
-            addInstr [ AsmPop "rdx"
-                     , AsmAdd "QWORD [rax + 8 + 8 * rdx]" "1"
-                     ]
+            addInstr
+                [ AsmPop "rdx"
+                , AsmAdd "QWORD [rax + 8 + 8 * rdx]" "1"
+                ]
     return False
 compileStmt (Decr _ (EVar _ x)) = do
     res <- getLoc (takeStr x)
     case res of
         Just (_, l) -> do
-            addInstr [ AsmMov "rax" l
-                    , AsmSub "rax" "1"
-                    , AsmMov l "rax"
-                    ]
+            addInstr
+                [ AsmMov "rax" l
+                , AsmSub "rax" "1"
+                , AsmMov l "rax"
+                ]
         Nothing -> do
             res <- getLoc "self"
             let Just (TClass name, l) = res
             (_, offset) <- getAttr name (takeStr x)
-            addInstr [ AsmMov "rax" l
-                     , AsmSub ("QWORD [rax + 8 * " ++ show offset ++ "]") "1"
-                     , AsmMov l "rax"
-                     ]
+            addInstr
+                [ AsmMov "rax" l
+                , AsmSub ("QWORD [rax + 8 * " ++ show offset ++ "]") "1"
+                , AsmMov l "rax"
+                ]
     return False
 compileStmt (Decr _ (EAttr _ e x)) = do
     t <- compileExp e
@@ -180,9 +192,10 @@ compileStmt (Decr _ (EElem _ e1 e2)) = do
             compileExp e2
             addInstr [AsmPush "rax"]
             compileExp e1
-            addInstr [ AsmPop "rdx"
-                     , AsmSub "QWORD [rax + 8 + 8 * rdx]" "1"
-                     ]
+            addInstr
+                [ AsmPop "rdx"
+                , AsmSub "QWORD [rax + 8 + 8 * rdx]" "1"
+                ]
     return False
 compileStmt (Ret _ e) = do
     compileExp e
@@ -230,21 +243,23 @@ compileStmt (For _ t x e s) = do
 
     addInstr [AsmPush "0", AsmLabel label1]
     compileExp e
-    addInstr [ AsmMov "rbx" "[rax]"
-             , AsmCmp "rbx" "[rsp]"
-             , AsmJmpRel "e" label2
-             , AsmAdd "QWORD [rsp]" "1"
-             , AsmMov "rbx" "[rsp]"
-             , AsmMov "rbx" "[rax + 8 * rbx]"
-             , AsmMov l "rbx"
-             ]
+    addInstr
+        [ AsmMov "rbx" "[rax]"
+        , AsmCmp "rbx" "[rsp]"
+        , AsmJmpRel "e" label2
+        , AsmAdd "QWORD [rsp]" "1"
+        , AsmMov "rbx" "[rsp]"
+        , AsmMov "rbx" "[rax + 8 * rbx]"
+        , AsmMov l "rbx"
+        ]
     compileStmt s
-    addInstr [ AsmJmp label1
-             , AsmLabel label2
-             , AsmPop "rbx"
-             ]
+    addInstr
+        [ AsmJmp label1
+        , AsmLabel label2
+        , AsmPop "rbx"
+        ]
 
-    modify (\st -> st { env = env })
+    modify (\st -> st {env = env})
     return False
 compileStmt (BStmt _ blk) = compileBlock blk
 compileStmt (Decl _ ty its) = do
@@ -260,12 +275,13 @@ compileExp e@(EOr _ e1 e2) = case simplifyExpr e of
         label1 <- nextLabel
         label2 <- nextLabel
         compileExp e1
-        addInstr [ AsmTest "rax" "rax"
-                 , AsmJmpRel "e" label1
-                 , AsmMov "rax" "1"
-                 , AsmJmp label2
-                 , AsmLabel label1
-                 ]
+        addInstr
+            [ AsmTest "rax" "rax"
+            , AsmJmpRel "e" label1
+            , AsmMov "rax" "1"
+            , AsmJmp label2
+            , AsmLabel label1
+            ]
         compileExp e2
         addInstr [AsmLabel label2]
         return TBool
@@ -279,11 +295,12 @@ compileExp e@(EAnd _ e1 e2) = case simplifyExpr e of
         compileExp e1
         addInstr [AsmTest "rax" "rax", AsmJmpRel "e" label1]
         compileExp e2
-        addInstr [ AsmJmp label2
-                 , AsmLabel label1
-                 , AsmMov "rax" "0"
-                 , AsmLabel label2
-                 ]
+        addInstr
+            [ AsmJmp label2
+            , AsmLabel label1
+            , AsmMov "rax" "0"
+            , AsmLabel label2
+            ]
         return TBool
 compileExp e@(ERel _ e1 op e2) = case simplifyExpr e of
     Right (SBool b) -> do
@@ -293,11 +310,12 @@ compileExp e@(ERel _ e1 op e2) = case simplifyExpr e of
         compileExp e2
         addInstr [AsmPush "rax"]
         compileExp e1
-        addInstr [ AsmPop "rbx"
-                , AsmCmp "rax" "rbx"
-                , AsmSet (takeRelOp op) "al"
-                , AsmMovzx "rax" "al"
-                ]
+        addInstr
+            [ AsmPop "rbx"
+            , AsmCmp "rax" "rbx"
+            , AsmSet (takeRelOp op) "al"
+            , AsmMovzx "rax" "al"
+            ]
         return TBool
 compileExp e@(EAdd _ e1 op e2) = case simplifyExpr e of
     Right (SInt n) -> do
@@ -314,10 +332,12 @@ compileExp e@(EAdd _ e1 op e2) = case simplifyExpr e of
         addInstr [AsmPop "rbx"]
         case (t1, t2) of
             (TInt, TInt) -> addAddOp op "rax" "rbx"
-            (TStr, TStr) -> addInstr [ AsmMov "rdi" "rax"
-                                     , AsmMov "rsi" "rbx"
-                                     , AsmCall "__concatString"
-                                     ]
+            (TStr, TStr) ->
+                addInstr
+                    [ AsmMov "rdi" "rax"
+                    , AsmMov "rsi" "rbx"
+                    , AsmCall "__concatString"
+                    ]
             _ -> error "Typechecker failed"
         return t1
 compileExp e@(EMul _ e1 op e2) = case simplifyExpr e of
@@ -405,9 +425,10 @@ compileExp (EVar _ x) = do
             res <- getLoc "self"
             let Just (TClass name, l) = res
             (t, offset) <- getAttr name (takeStr x)
-            addInstr [ AsmMov "rax" l
-                     , AsmMov "rax" ("[rax + 8 * " ++ show offset ++ "]")
-                     ]
+            addInstr
+                [ AsmMov "rax" l
+                , AsmMov "rax" ("[rax + 8 * " ++ show offset ++ "]")
+                ]
             return t
 compileExp (EInt _ n) = addInstr [AsmMov "rax" (show n)] >> return TInt
 compileExp (EString _ s) = do
@@ -431,13 +452,15 @@ callFunction es toCall isMethod = do
         size = 8 * length stackExpr
 
     mapM (\e -> compileExp e >> addInstr [AsmPush "rax"]) regExpr
-    mapM (\e -> do
-        l <- newLoc
-        compileExp e
-        mapM (\reg -> addInstr [AsmPop reg]) (reverse regs)
-        addInstr [AsmPush "rax"]
-        mapM (\reg -> addInstr [AsmPush reg]) regs
-        ) stackExpr
+    mapM
+        ( \e -> do
+            l <- newLoc
+            compileExp e
+            mapM (\reg -> addInstr [AsmPop reg]) (reverse regs)
+            addInstr [AsmPush "rax"]
+            mapM (\reg -> addInstr [AsmPush reg]) regs
+        )
+        stackExpr
     mapM (\reg -> addInstr [AsmPop reg]) (reverse $ take (length regExpr + self) regs)
     addInstr [AsmCall toCall]
     addInstr [AsmAdd "rsp" (show size)]

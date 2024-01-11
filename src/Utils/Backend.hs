@@ -11,31 +11,33 @@ type Attributes = Map.Map String (TType, Int)
 type Methods = Map.Map String TType
 type Extends = Maybe String
 type ClassEnv = (Attributes, Methods, Extends)
-data Reader = Rd {
-    func :: Map.Map String TType,
-    clss :: Map.Map String ClassEnv
-}
+
+data Reader = Rd
+    { func :: Map.Map String TType
+    , clss :: Map.Map String ClassEnv
+    }
 type Writer = [AsmInstr]
-data State = St {
-    nextlab :: Int,
-    newloc :: Int,
-    env :: Map.Map String (TType, String),
-    rodata :: Map.Map String String
-}
+data State = St
+    { nextlab :: Int
+    , newloc :: Int
+    , env :: Map.Map String (TType, String)
+    , rodata :: Map.Map String String
+    }
 
 type CM a = RWS Reader Writer State a
 
 predefFunc :: [(String, TType)]
-predefFunc = [ ("printInt", TVoid)
-             , ("printString", TVoid)
-             , ("error", TVoid)
-             , ("readInt", TInt)
-             , ("readString", TStr)
-             , ("__concatString", TStr)
-             ]
+predefFunc =
+    [ ("printInt", TVoid)
+    , ("printString", TVoid)
+    , ("error", TVoid)
+    , ("readInt", TInt)
+    , ("readString", TStr)
+    , ("__concatString", TStr)
+    ]
 
 initReader :: Reader
-initReader = Rd { func = Map.fromList predefFunc, clss = Map.empty }
+initReader = Rd {func = Map.fromList predefFunc, clss = Map.empty}
 
 methodName :: String -> String -> String
 methodName cname mname = "__cls_" ++ cname ++ "_mth_" ++ mname
@@ -66,46 +68,57 @@ getMethod className mthName = do
         Nothing -> error "Typechecker failed"
 
 writeFields :: Extends -> [Field] -> ClassEnv
-writeFields ext = foldl
-    (\(attrs, methods, ext) field -> case field of
-        (AttrDef _ t x) -> (Map.insert (takeStr x) (takeType t, Map.size attrs) attrs, methods, ext)
-        (MethodDef _ t x _ _) -> (attrs, Map.insert (takeStr x) (takeType t) methods, ext)
-    ) (Map.empty, Map.empty, ext)
+writeFields ext =
+    foldl
+        ( \(attrs, methods, ext) field -> case field of
+            (AttrDef _ t x) -> (Map.insert (takeStr x) (takeType t, Map.size attrs) attrs, methods, ext)
+            (MethodDef _ t x _ _) -> (attrs, Map.insert (takeStr x) (takeType t) methods, ext)
+        )
+        (Map.empty, Map.empty, ext)
 
 myUnion :: Attributes -> Attributes -> Attributes
 myUnion m1 m2 = Map.fromList $ helper (Map.toList m1) (Map.toList $ Map.difference m2 m1) (Map.size m1)
-    where
-        helper :: [(String, (TType, Int))] -> [(String, (TType, Int))] -> Int -> [(String, (TType, Int))]
-        helper xs [] _ = xs
-        helper xs ((y,(t,_)):ys) c = helper (xs ++ [(y,(t, c))]) ys (c + 1)
+  where
+    helper :: [(String, (TType, Int))] -> [(String, (TType, Int))] -> Int -> [(String, (TType, Int))]
+    helper xs [] _ = xs
+    helper xs ((y, (t, _)) : ys) c = helper (xs ++ [(y, (t, c))]) ys (c + 1)
 
 addExtFields :: Reader -> Map.Map String ClassEnv
 addExtFields r = Map.map go (clss r)
-    where
-        go :: ClassEnv -> ClassEnv
-        go env1@(attrs, methods, ext) = maybe env1
-            (\name -> case Map.lookup name (clss r) of
+  where
+    go :: ClassEnv -> ClassEnv
+    go env1@(attrs, methods, ext) =
+        maybe
+            env1
+            ( \name -> case Map.lookup name (clss r) of
                 Just env2 ->
                     let (atr, _, _) = go env2
                      in (myUnion atr attrs, methods, ext)
                 Nothing -> error "impossible case"
-            ) ext
+            )
+            ext
 
 writeTopDefs :: [TopDef] -> Reader
 writeTopDefs tds = do
-    let res = foldl
-              (\acc td -> case td of
-                  (FnDef _ t x _ _) -> acc { func = Map.insert (takeStr x) (takeType t) (func acc) }
-                  (ClassDef _ x fields) -> acc { clss = Map.insert (takeStr x) (writeFields Nothing fields) (clss acc) }
-                  (ClassExt _ x y fields) -> acc { clss = Map.insert (takeStr x) (writeFields (Just $ takeStr y) fields) (clss acc) }
-              ) initReader tds
-    res { clss = addExtFields res }
+    let res =
+            foldl
+                ( \acc td -> case td of
+                    (FnDef _ t x _ _) -> acc {func = Map.insert (takeStr x) (takeType t) (func acc)}
+                    (ClassDef _ x fields) -> acc {clss = Map.insert (takeStr x) (writeFields Nothing fields) (clss acc)}
+                    (ClassExt _ x y fields) -> acc {clss = Map.insert (takeStr x) (writeFields (Just $ takeStr y) fields) (clss acc)}
+                )
+                initReader
+                tds
+    res {clss = addExtFields res}
 
 initState :: State
-initState = St { nextlab = 0,
-                 newloc = 0,
-                 env = Map.empty,
-                 rodata = Map.empty }
+initState =
+    St
+        { nextlab = 0
+        , newloc = 0
+        , env = Map.empty
+        , rodata = Map.empty
+        }
 
 defaultVal :: TType -> CM String
 defaultVal t = case t of
@@ -122,17 +135,17 @@ getFunType f = do
 nextLabel :: CM String
 nextLabel = do
     l <- gets nextlab
-    modify (\st -> st { nextlab = l + 1 })
+    modify (\st -> st {nextlab = l + 1})
     return $ ".L" ++ show l
 
 newLoc :: CM String
 newLoc = do
-    modify (\st -> st { newloc = (newloc st) + 1 })
+    modify (\st -> st {newloc = (newloc st) + 1})
     l <- gets newloc
     return $ "QWORD [rbp - " ++ show (8 * l) ++ "]"
 
 writeLoc :: String -> TType -> String -> CM ()
-writeLoc x t l = modify (\st -> st { env = Map.insert x (t, l) (env st) })
+writeLoc x t l = modify (\st -> st {env = Map.insert x (t, l) (env st)})
 
 getLoc :: String -> CM (Maybe (TType, String))
 getLoc x = do
@@ -147,7 +160,7 @@ newLocStr = do
     return $ "_strMsg" ++ show l
 
 writeLocStr :: String -> String -> CM ()
-writeLocStr s l = modify (\st -> st { rodata = Map.insert s l (rodata st) })
+writeLocStr s l = modify (\st -> st {rodata = Map.insert s l (rodata st)})
 
 getLocStr :: String -> CM String
 getLocStr s = do
@@ -192,30 +205,36 @@ addMulOp (Div _) _ s2 = addInstr [AsmCqo, AsmDiv s2]
 addMulOp (Mod _) _ s2 = addInstr [AsmCqo, AsmDiv s2, AsmMov "rax" "rdx"]
 
 addPrologue :: String -> CM ()
-addPrologue x = addInstr [ AsmLabel x
-                         , AsmPush "rbp"
-                         , AsmMov "rbp" "rsp"
-                         ]
+addPrologue x =
+    addInstr
+        [ AsmLabel x
+        , AsmPush "rbp"
+        , AsmMov "rbp" "rsp"
+        ]
 
 addEpilogue :: CM ()
-addEpilogue = addInstr [ AsmLabel ".end"
-                       , AsmMov "rsp" "rbp"
-                       , AsmPop "rbp"
-                       , AsmRet
-                       ]
+addEpilogue =
+    addInstr
+        [ AsmLabel ".end"
+        , AsmMov "rsp" "rbp"
+        , AsmPop "rbp"
+        , AsmRet
+        ]
 
 addExterns :: CM ()
-addExterns = addInstr [ AsmSection ".text"
-                      , AsmGlobal "main"
-                      , AsmExtern "printInt"
-                      , AsmExtern "printString"
-                      , AsmExtern "error"
-                      , AsmExtern "readInt"
-                      , AsmExtern "readString"
-                      , AsmExtern "__concatString"
-                      , AsmExtern "__allocArray"
-                      , AsmExtern "__allocClass"
-                      ]
+addExterns =
+    addInstr
+        [ AsmSection ".text"
+        , AsmGlobal "main"
+        , AsmExtern "printInt"
+        , AsmExtern "printString"
+        , AsmExtern "error"
+        , AsmExtern "readInt"
+        , AsmExtern "readString"
+        , AsmExtern "__concatString"
+        , AsmExtern "__allocArray"
+        , AsmExtern "__allocClass"
+        ]
 
 addRodata :: CM ()
 addRodata = do

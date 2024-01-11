@@ -1,30 +1,30 @@
 module Backend.Generator where
 
-data AsmInstr = 
-    AsmMov String String |
-    AsmMovzx String String |
-    AsmLea String String |
-    AsmAdd String String |
-    AsmSub String String |
-    AsmMul String String |
-    AsmDiv String |
-    AsmNeg String |
-    AsmXor String String |
-    AsmPush String |
-    AsmPop String |
-    AsmCall String |
-    AsmTest String String |
-    AsmCmp String String |
-    AsmSet String String |
-    AsmJmpRel String String |
-    AsmJmp String |
-    AsmSection String |
-    AsmData String String |
-    AsmLabel String |
-    AsmGlobal String |
-    AsmExtern String |
-    AsmCqo |
-    AsmRet
+data AsmInstr
+    = AsmMov String String
+    | AsmMovzx String String
+    | AsmLea String String
+    | AsmAdd String String
+    | AsmSub String String
+    | AsmMul String String
+    | AsmDiv String
+    | AsmNeg String
+    | AsmXor String String
+    | AsmPush String
+    | AsmPop String
+    | AsmCall String
+    | AsmTest String String
+    | AsmCmp String String
+    | AsmSet String String
+    | AsmJmpRel String String
+    | AsmJmp String
+    | AsmSection String
+    | AsmData String String
+    | AsmLabel String
+    | AsmGlobal String
+    | AsmExtern String
+    | AsmCqo
+    | AsmRet
 
 instance Show AsmInstr where
     show (AsmMov s1 s2) = returnFmt $ "mov " ++ s1 ++ ", " ++ s2
