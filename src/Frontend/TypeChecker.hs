@@ -252,7 +252,10 @@ checkExp (EAttr pos e x) = do
     let attr = takeStr x
     t <- checkExp e
     case t of
-        TArr _ -> if attr == "length" then return TInt else throwError $ newErr pos ("An array has no attribute " ++ attr)
+        TArr _ ->
+            if attr == "length"
+                then return TInt
+                else throwError $ newErr pos ("An array has no attribute " ++ attr)
         TClass name -> takeAttr pos attr name
         _ -> throwError $ newErr (takeExprPos e) "Expression must be an array or a class"
 checkExp (EMethod pos e x es) = do

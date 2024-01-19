@@ -22,6 +22,7 @@ data State = St
     , newloc :: Int
     , env :: Map.Map String (TType, String)
     , rodata :: Map.Map String String
+    , rspOff :: Int
     }
 
 type CM a = RWS Reader Writer State a
@@ -118,6 +119,7 @@ initState =
         , newloc = 0
         , env = Map.empty
         , rodata = Map.empty
+        , rspOff = 0
         }
 
 defaultVal :: TType -> CM String
@@ -192,8 +194,24 @@ takeRelOp (GE _) = "ge"
 takeRelOp (EQU _) = "e"
 takeRelOp (NE _) = "ne"
 
+rspOffset :: AsmInstr -> CM ()
+rspOffset (AsmAdd "rsp" s) = modify (\st -> st {rspOff = rspOff st - read s :: Int})
+rspOffset (AsmSub "rsp" s) = modify (\st -> st {rspOff = rspOff st + read s :: Int})
+rspOffset (AsmPush _) = modify (\st -> st {rspOff = rspOff st + 8})
+rspOffset (AsmPop _) = modify (\st -> st {rspOff = rspOff st - 8})
+rspOffset _ = return ()
+
 addInstr :: [AsmInstr] -> CM ()
-addInstr ins = tell ins
+addInstr ins = do
+    mapM_ rspOffset ins
+    off <- gets rspOff
+    if (any isCall ins && mod off 16 /= 0)
+        then tell $ [AsmSub "rsp" "8"] ++ ins ++ [AsmAdd "rsp" "8"]
+        else tell ins
+  where
+    isCall :: AsmInstr -> Bool
+    isCall (AsmCall _) = True
+    isCall _ = False
 
 addAddOp :: AddOp -> String -> String -> CM ()
 addAddOp (Plus _) s1 s2 = addInstr [AsmAdd s1 s2]

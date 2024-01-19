@@ -9,6 +9,8 @@ data AsmInstr
     | AsmMul String String
     | AsmDiv String
     | AsmNeg String
+    | AsmInc String
+    | AsmDec String
     | AsmXor String String
     | AsmPush String
     | AsmPop String
@@ -35,6 +37,8 @@ instance Show AsmInstr where
     show (AsmMul s1 s2) = returnFmt $ "imul " ++ s1 ++ ", " ++ s2
     show (AsmDiv s) = returnFmt $ "idiv " ++ s
     show (AsmNeg s) = returnFmt $ "neg " ++ s
+    show (AsmInc s) = returnFmt $ "inc " ++ s
+    show (AsmDec s) = returnFmt $ "dec " ++ s
     show (AsmXor s1 s2) = returnFmt $ "xor " ++ s1 ++ ", " ++ s2
     show (AsmPush s) = returnFmt $ "push " ++ s
     show (AsmPop s) = returnFmt $ "pop " ++ s
@@ -45,7 +49,7 @@ instance Show AsmInstr where
     show (AsmJmpRel op s) = returnFmt $ "j" ++ op ++ " " ++ s
     show (AsmJmp s) = returnFmt $ "jmp " ++ s
     show (AsmSection s) = "section " ++ s ++ "\n"
-    show (AsmData s1 s2) = s1 ++ " db \"" ++ s2 ++ "\", 0\n"
+    show (AsmData s1 s2) =  returnFmt $ s1 ++ " db \"" ++ s2 ++ "\", 0"
     show (AsmLabel s) = s ++ ":\n"
     show (AsmGlobal s) = returnFmt $ "global " ++ s
     show (AsmExtern s) = returnFmt $ "extern " ++ s
