@@ -6,7 +6,7 @@ You can read detailed description in either [polish](Latte.md) or [english](Latt
 ## Implemented extensions
 - arrays
 - structs
-- objects - attributes, methods, single inheritance (without virtual methods yet)
+- objects - attributes, methods, single inheritance (without virtual methods)
 
 ## Usage
 To build and run the project execute
