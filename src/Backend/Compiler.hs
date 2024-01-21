@@ -80,6 +80,90 @@ compileItem ty it = do
         Init _ _ e -> compileExp e >> addInstr [AsmMov l "rax"]
     writeLoc (itemStr it) t l
 
+compileBexprIf :: Expr -> String -> CM ()
+compileBexprIf e label1 = case e of
+    (EOr _ e1 e2) -> do
+        label2 <- nextLabel
+        compileExp e1
+        addInstr
+            [ AsmTest "rax" "rax"
+            , AsmJmpRel "ne" label2
+            ]
+        compileExp e2
+        addInstr
+            [ AsmTest "rax" "rax"
+            , AsmJmpRel "e" label1
+            , AsmLabel label2
+            ]
+    (EAnd _ e1 e2) -> do
+        compileExp e1
+        addInstr
+            [ AsmTest "rax" "rax"
+            , AsmJmpRel "e" label1
+            ]
+        compileExp e2
+        addInstr
+            [ AsmTest "rax" "rax"
+            , AsmJmpRel "e" label1
+            ]
+    (ERel _ e1 op e2) -> do
+        compileExp e2
+        addInstr [AsmPush "rax"]
+        compileExp e1
+        addInstr
+            [ AsmPop "r10"
+            , AsmCmp "rax" "r10"
+            , AsmJmpRel (negRelOp op) label1
+            ]
+    _ -> do
+        compileExp e
+        addInstr
+            [ AsmTest "rax" "rax"
+            , AsmJmpRel "e" label1
+            ]
+
+compileBExprIfElse :: Expr -> String -> String -> CM ()
+compileBExprIfElse e label1 label2 = case e of
+    (EOr _ e1 e2) -> do
+        label3 <- nextLabel
+        compileExp e1
+        addInstr
+            [ AsmTest "rax" "rax"
+            , AsmJmpRel "ne" label3
+            ]
+        compileExp e2
+        addInstr
+            [ AsmTest "rax" "rax"
+            , AsmJmpRel "e" label1
+            , AsmLabel label3
+            ]
+    (EAnd _ e1 e2) -> do
+        compileExp e1
+        addInstr
+            [ AsmTest "rax" "rax"
+            , AsmJmpRel "e" label1
+            ]
+        compileExp e2
+        addInstr
+            [ AsmTest "rax" "rax"
+            , AsmJmpRel "e" label1
+            ]
+    (ERel _ e1 op e2) -> do
+        compileExp e2
+        addInstr [AsmPush "rax"]
+        compileExp e1
+        addInstr
+            [ AsmPop "r10"
+            , AsmCmp "rax" "r10"
+            , AsmJmpRel (negRelOp op) label1
+            ]
+    _ -> do
+        compileExp e
+        addInstr
+            [ AsmTest "rax" "rax"
+            , AsmJmpRel "e" label1
+            ]
+
 compileStmt :: Stmt -> CM Bool
 compileStmt (Empty _) = return False
 compileStmt (Exp _ e) = compileExp e >> return False
@@ -202,8 +286,7 @@ compileStmt (If _ e s) = case simplifyExpr e of
     Right (SBool b) -> if b then compileStmt s else return False
     _ -> do
         label <- nextLabel
-        compileExp e
-        addInstr [AsmTest "rax" "rax", AsmJmpRel "e" label]
+        compileBexprIf e label
         compileStmt s
         addInstr [AsmLabel label]
         return False
@@ -212,10 +295,12 @@ compileStmt (IfElse _ e s1 s2) = case simplifyExpr e of
     _ -> do
         label1 <- nextLabel
         label2 <- nextLabel
-        compileExp e
-        addInstr [AsmTest "rax" "rax", AsmJmpRel "e" label1]
+        compileBExprIfElse e label1 label2
         ret1 <- compileStmt s1
-        addInstr [AsmJmp label2, AsmLabel label1]
+        addInstr
+            [ AsmJmp label2
+            , AsmLabel label1
+            ]
         ret2 <- compileStmt s2
         addInstr [AsmLabel label2]
         return $ ret1 && ret2
@@ -223,8 +308,7 @@ compileStmt (While _ e s) = do
     label1 <- nextLabel
     label2 <- nextLabel
     addInstr [AsmLabel label1]
-    compileExp e
-    addInstr [AsmTest "rax" "rax", AsmJmpRel "e" label2]
+    compileBexprIf e label2
     compileStmt s
     addInstr [AsmJmp label1, AsmLabel label2]
     return False

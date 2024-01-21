@@ -186,6 +186,14 @@ calcDeclSize (Decl _ _ its) = 8 * length its
 calcDeclSize (For _ _ _ _ s) = 8 + calcDeclSize s
 calcDeclSize _ = 0
 
+negRelOp :: RelOp -> String
+negRelOp (LTH _) = "ge"
+negRelOp (LE _) = "g"
+negRelOp (GTH _) = "le"
+negRelOp (GE _) = "l"
+negRelOp (EQU _) = "ne"
+negRelOp (NE _) = "e"
+
 takeRelOp :: RelOp -> String
 takeRelOp (LTH _) = "l"
 takeRelOp (LE _) = "le"
